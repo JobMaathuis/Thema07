@@ -1,0 +1,187 @@
+---
+title: "Analysis of gene expression"
+author: "Job Maathuis"
+date: "9-3-2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#  Exploratory Data Analysis
+
+The data consists of gene expression data which is available as raw count data in a single text file. For this reason the read.table() function can be used and no merging is needed. The column names were changed by using the 'patient_codes.csv'.
+
+```{r}
+
+setwd('C:/Users/jobma/Documents/School/Bio-informatica/Jaar_2/Kwartaal_3/practicum/')
+data <- read.table('counts.txt', header = T, row.names = 1)
+patient_codes <- read.csv('patient_codes.csv', header=F)
+patient_codes[,2] <- gsub('-.*-', '-', patient_codes[,2])  # removes the middle part
+colnames(data) <- patient_codes[,2][patient_codes[,1] == colnames(data)]
+name_dataset <- 'GSE181032'
+```
+
+
+
+
+The dataset has the following structure
+```{r}
+library(pander)
+pander(head(data, 5))
+print(dim(data))
+print(str(data))
+```
+
+The dataset can be divided, some variables can be made to distinguish between groups
+
+```{r}
+m29 <- c(1, 6, 11)
+m42 <- c(2, 7, 12)
+m43 <- c(3, 8, 13)
+m.all <- c(m29, m42, m43)
+
+s10 <- c(4, 9, 14)
+s11 <- c(5, 10, 15)
+s.all <- c(s10, s11)
+```
+
+To get a quick look at the data the summary() function is used. With this function the minimum, first quartile, median, mean, third quartile and the maximum values are obtained. 
+
+```{r}
+summary(data)
+```
+In the data above a large difference between the maximum values and the other values can be observed. This is probably due to the fact that the data contains a lot of zeros or low values.
+
+Next a boxplot can be made to visualise the data.
+```{r}
+library(scales)
+colors <- hue_pal(c=70)(5)
+boxplot((data[,c(m29, m42, m43, s10, s11)] + 1),
+        main = 'boxplots of the count data for GSE181032',
+        ylab = 'Log2(counts)', outline = F, las = 2, 
+        col=rep(colors, each=3))
+```
+For every patient the repeats shows the same distrubution, this is also the case if the patients are compared. A somewhat larger deviation can be seen in s11-TR2 data. 
+
+The distrubtion of the count data can also be visualised using a density plot.
+```{r}
+library(affy)
+plotDensity(log2(data + 0.1),  main = 'Density plot for GSE181032', 
+       xlab = 'Log2(counts)', ylab = 'Density')
+legend('topright', names(data), lty=c(1:ncol(data)),
+       cex = 0.8, col=rep(colors, each=3))
+abline(v=-1.5, lwd=1, col='red', lty=2)
+```
+All of the lines follow the same distrubution, where only m29-TR3 is a bit variated from the other data. This variation is not much, so this will probably not cause any big problems. 
+
+```{r}
+barplot(colSums(data[,c(m29, m42, m43, s10, s11)]) / 1e6, las = 2,
+        col=rep(colors, each=3), ylim = c(0, 1))
+```
+
+```{r}
+library("DESeq2")
+
+(ddsMat <- DESeqDataSetFromMatrix(countData = data,
+                                  colData = data.frame(samples = names(data)),
+                                  design = ~ 1))
+# DESeq2 will construct a SummarizedExperiment object and combine this 
+# into a 'DESeqDataSet' object. The 'design' argument usually indicates the 
+# experimental design using the condition(s) names as a 'factor', for now we use just '~ 1'
+
+# Perform normalization
+rld.dds <- vst(ddsMat)
+# 'Extract' normalized values
+rld <- assay(rld.dds)
+# transposes and calculate distances
+sampledists <- dist(t(rld))
+```
+
+
+```{r}
+# We use the 'pheatmap' library (install with install.packages('pheatmap'))
+library(pheatmap)
+
+# Convert the 'dist' object into a matrix for creating a heatmap
+sampleDistMatrix <- as.matrix(sampledists)
+
+# The annotation is an extra layer that will be plotted above the heatmap columns
+# indicating the cell type
+annotation <- data.frame(Patient = factor(rep(1:5, times = 3), 
+                                          labels = c("m29", "m42", "m43", "s10", "s11")),
+                         Repeat = factor(rep(rep(1:3, times = 1), each = 5),
+                                         labels = c("R1", "R2", "R3")))
+                         
+# Set the rownames of the annotation dataframe to the sample names (required)
+rownames(annotation) <- names(data)
+
+pheatmap(sampleDistMatrix, show_colnames = FALSE,
+         annotation_col = annotation,
+         clustering_distance_rows = sampledists,
+         clustering_distance_cols = sampledists,
+         main = "Euclidean Sample Distances")
+
+```
+
+
+
+
+
+
+```{r}
+library('PoiClaClu')
+library('ggplot2')
+
+# Use the raw (not r-log transformed!) counts
+dds <- assay(ddsMat)
+poisd <- PoissonDistance(t(dds))
+# Extract the matrix with distances
+samplePoisDistMatrix <- as.matrix(poisd$dd)
+# Calculate the MDS and get the X- and Y-coordinates
+mdsPoisData <- data.frame( cmdscale(samplePoisDistMatrix) )
+
+# And set some better readable names for the columns
+names(mdsPoisData) <- c('x_coord', 'y_coord')
+
+# Separate the annotation factor (as the variable name is used as label)
+groups <- factor(rep(1:5, times=3), 
+                 labels = c("m29", "m42", "m43", "s10", "s11"))
+coldata <- names(data)
+
+# Create the plot using ggplot
+ggplot(mdsPoisData, aes(x_coord, y_coord, color = groups, label = coldata)) + 
+  geom_text(size = 4) +
+  ggtitle('Multi Dimensional Scaling') +
+  labs(x = "Poisson Distance", y = "Poisson Distance") +
+  theme_bw()
+```
+
+All of the technical repeats from each patient are clustered together. Only s11-TR2 is somewhat seperated from the other repeats of the s11 patient, but this distance is still small.  For these reasons, the data does noet have to be cleaned since there are no clear outliers visible. Furthermore, all of the mild patients are on the left, while the severe patience are a bit shifted to the right (all positive x_coord values)
+
+## Manual pre-processing
+
+Later on we will use libraries in order to normalise the data and calculate the fold-changes of each gene. In order to get some insight into the data, this is done manually. First, the data is normalised to fragments per million mapped fragments 
+
+```{r}
+# Perform a naive FPM4 normalization
+# Note: log transformation includes a pseudocount of 11
+data.fpm <- log2( (data / (colSums(data) / 1e6)) + 1 )
+
+
+data.fpm.filtered <- data.fpm[rowSums(data.fpm) >= 3,]
+cat(nrow(data.fpm) - nrow(data.fpm.filtered), "genes have been filtered out")
+```
+
+```{r}
+data.fpm$m.mean <- apply(data.fpm ,1 , function(x) mean(x[m.all]))
+data.fpm$s.mean <- apply(data.fpm, 1, function(x) mean(x[s.all]))
+data.fpm$lfc <- data.fpm$m.mean - data.fpm$s.mean
+
+hist(data.fpm$lfc, breaks=80)
+abline(v=-1, col = 'red', lty=2)
+abline(v=1, col = 'red', lty=2)
+```
+
+## Discovering Differentialy Expressed Genes
+
