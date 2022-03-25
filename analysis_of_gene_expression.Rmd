@@ -7,6 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cahce = TRUE)
 ```
 #  Exploratory Data Analysis
 
@@ -80,7 +81,7 @@ barplot(colSums(data[,c(m29, m42, m43, s10, s11)]) / 1e6, las = 2,
         col=rep(colors, each=3), ylim = c(0, 1))
 ```
 
-```{r}
+```{r, message=FALSE}
 library("DESeq2")
 
 (ddsMat <- DESeqDataSetFromMatrix(countData = data,
@@ -110,6 +111,9 @@ sampleDistMatrix <- as.matrix(sampledists)
 # indicating the cell type
 annotation <- data.frame(Patient = factor(rep(1:5, times = 3), 
                                           labels = c("m29", "m42", "m43", "s10", "s11")),
+                         Condition = factor(rep(c(rep("mild", times = 3),
+                                                rep("severe", times = 2)), times = 3),
+                                            levels = c('mild', 'severe')),
                          Repeat = factor(rep(rep(1:3, times = 1), each = 5),
                                          labels = c("R1", "R2", "R3")))
                          
@@ -121,7 +125,8 @@ pheatmap(sampleDistMatrix, show_colnames = FALSE,
          clustering_distance_rows = sampledists,
          clustering_distance_cols = sampledists,
          main = "Euclidean Sample Distances")
-
+# ~ 0 + Cell
+# contrast
 ```
 
 
@@ -174,8 +179,8 @@ cat(nrow(data.fpm) - nrow(data.fpm.filtered), "genes have been filtered out")
 ```
 
 ```{r}
-data.fpm$m.mean <- apply(data.fpm ,1 , function(x) mean(x[m.all]))
-data.fpm$s.mean <- apply(data.fpm, 1, function(x) mean(x[s.all]))
+data.fpm$m.mean <- rowMeans(data.fpm[m.all])
+data.fpm$s.mean <- rowMeans(data.fpm[s.all])
 data.fpm$lfc <- data.fpm$m.mean - data.fpm$s.mean
 
 hist(data.fpm$lfc, breaks=80)
@@ -184,4 +189,51 @@ abline(v=1, col = 'red', lty=2)
 ```
 
 ## Discovering Differentialy Expressed Genes
+
+
+```{r, message=FALSE}
+ddsMat <- DESeqDataSetFromMatrix(countData = data,
+                                  colData = annotation,
+                                  design = ~ Condition)
+ddsMat <- DESeq(ddsMat, betaPrior = FALSE)
+ddsMat <- collapseReplicates(ddsMat, groupby = annotation$Patient)
+resultsNames(ddsMat)
+```
+```{r, message=FALSE}
+res <- results(ddsMat, alpha = 0.05)
+plotMA(res, ylim = c(-4.5, 4.5))
+res <- lfcShrink(ddsMat, coef="Condition_severe_vs_mild", type="apeglm")
+pander(summary(res))
+plotMA(res, ylim = c(-4.5, 4.5))
+```
+
+# Data Analysis and Visualization
+
+## Volcano plot
+```{r}
+library(EnhancedVolcano)
+
+## Simple function for plotting a Volcano plot, returns a ggplot object
+deseq.volcano <- function(res, datasetName) {
+  return(EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
+                         lab=rownames(res),
+                         title = paste(datasetName, "Severe vs Mild"),
+                         subtitle = bquote(italic('FDR <= 0.05 and absolute FC >= 2')),
+                         # Change text and icon sizes
+                         labSize = 3, pointSize = 1.5, axisLabSize=10, titleLabSize=12,
+                         subtitleLabSize=8, captionLabSize=10,
+                         # Disable legend
+                         legendPosition = "none",
+                         # Set cutoffs
+                         pCutoff = 0.05, FCcutoff = 2))
+}
+
+## Note: input data is the corrected DESeq2 output using the 'lfcShrink' function (see chapter 4)
+deseq.volcano(res = res, datasetName = 'Corona')
+```
+
+
+```{r}
+robpc
+```
 
