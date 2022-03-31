@@ -2,29 +2,33 @@
 title: "Analysis of gene expression"
 author: "Job Maathuis"
 date: "9-3-2022"
-output: pdf_document
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 4
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_chunk$set(cahce = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
 ```
-#  Exploratory Data Analysis
+#  1. Exploratory Data Analysis
 
+## 1.1 Loading in the data
 The data consists of gene expression data which is available as raw count data in a single text file. For this reason the read.table() function can be used and no merging is needed. The column names were changed by using the 'patient_codes.csv'.
 
 ```{r}
-
 setwd('C:/Users/jobma/Documents/School/Bio-informatica/Jaar_2/Kwartaal_3/practicum/')
+
 data <- read.table('counts.txt', header = T, row.names = 1)
 patient_codes <- read.csv('patient_codes.csv', header=F)
-patient_codes[,2] <- gsub('-.*-', '-', patient_codes[,2])  # removes the middle part
+# shortening patient names by deleting the middle part
+patient_codes[,2] <- gsub('-.*-', '-', patient_codes[,2])
 colnames(data) <- patient_codes[,2][patient_codes[,1] == colnames(data)]
-name_dataset <- 'GSE181032'
 ```
 
 
-
+## 1.2 Data structure
 
 The dataset has the following structure
 ```{r}
@@ -33,82 +37,95 @@ pander(head(data, 5))
 print(dim(data))
 print(str(data))
 ```
+As can be seen above, the data consists out of 16,282 rows, corresponding to the genes, and 15 columns, which are the different samples. The structure of the samples is as follows:
 
-The dataset can be divided, some variables can be made to distinguish between groups
+*  3 patients with a mild disease severity (m29, m42, m43), each having 3 technical repeats
+*  2 patients with a severe disease severity (s10, s11), each having 3 technical repeats
+
+To distinguish between these groups, some variables are made.
 
 ```{r}
+# variable for dataset name, which can be used later
+name_dataset <- 'GSE181032'
+
+# mild patients
 m29 <- c(1, 6, 11)
 m42 <- c(2, 7, 12)
 m43 <- c(3, 8, 13)
 m.all <- c(m29, m42, m43)
 
+# severe patients
 s10 <- c(4, 9, 14)
 s11 <- c(5, 10, 15)
 s.all <- c(s10, s11)
 ```
 
-To get a quick look at the data the summary() function is used. With this function the minimum, first quartile, median, mean, third quartile and the maximum values are obtained. 
+To get a quick look at the data the summary() function is used. With this function the minimum, first quartile, median, mean, third quartile and the maximum value of each column are obtained. 
 
 ```{r}
 summary(data)
 ```
-In the data above a large difference between the maximum values and the other values can be observed. This is probably due to the fact that the data contains a lot of zeros or low values.
+In the data above a large difference between the maximum values and the other values can be observed. This is probably due to the fact that the data contains a lot of zeros or low values. In a biological context this means that most of the genes that are analysed are 'off' and only a few genes are being expressed at time of the RNA-seq analysis. 
 
-Next a boxplot can be made to visualise the data.
+## 1.3 Data visualisation
+
+### 1.3.1 Boxplot
+Next a boxplot can be made to visualise the structure of the data.
 ```{r}
 library(scales)
 colors <- hue_pal(c=70)(5)
 boxplot((data[,c(m29, m42, m43, s10, s11)] + 1),
-        main = 'boxplots of the count data for GSE181032',
+        main = 'Boxplot of the count data for GSE181032',
         ylab = 'Log2(counts)', outline = F, las = 2, 
         col=rep(colors, each=3))
 ```
-For every patient the repeats shows the same distrubution, this is also the case if the patients are compared. A somewhat larger deviation can be seen in s11-TR2 data. 
+For every patient the repeats shows the same distrubution. This is also the case if the patients are compared. A somewhat larger deviation can be seen in s11-TR2 data. The large differences between the maximum values and the other values reflect the summary data in the previous chapter. 
 
+### 1.3.2 Density plot
 The distrubtion of the count data can also be visualised using a density plot.
-```{r}
+```{r, message=FALSE}
 library(affy)
 plotDensity(log2(data + 0.1),  main = 'Density plot for GSE181032', 
        xlab = 'Log2(counts)', ylab = 'Density')
 legend('topright', names(data), lty=c(1:ncol(data)),
-       cex = 0.8, col=rep(colors, each=3))
+       cex = 0.7, col=rep(colors, each=3))
 abline(v=-1.5, lwd=1, col='red', lty=2)
 ```
-All of the lines follow the same distrubution, where only m29-TR3 is a bit variated from the other data. This variation is not much, so this will probably not cause any big problems. 
+All of the lines follow the same distrubution, where only m29-TR3 is a bit variated from the other data. This variation is not much, so this will probably not cause any big problems. The large peak at the left of the red stippled line is caused by all of the zero's in the dataset. 
 
+### 1.3.3 Barplot
 ```{r}
-barplot(colSums(data[,c(m29, m42, m43, s10, s11)]) / 1e6, las = 2,
-        col=rep(colors, each=3), ylim = c(0, 1))
+barplot(colSums(data[,c(m29, m42, m43, s10, s11)]) / 1e3, las = 2,
+        ylab = 'Sequencing depth (thousands of reads)',
+        main = 'Read counts for GSE181032',
+        col=rep(colors, each=3), ylim = c(0, 1000))
 ```
+In the barplot a not much deviation can be seen between samples or within the samples. Only patient s11 has some larger deviation between the minimum and maximum sequencing depth. For this reason the dataset is being normalized. Normalization is achieved by using a variance stabilzing transformation (vst) form the DESeq2 library. When the data is normalzied sample distances can be calculated.
 
 ```{r, message=FALSE}
 library("DESeq2")
-
-(ddsMat <- DESeqDataSetFromMatrix(countData = data,
+# create a DESeq dataset
+ddsMat <- DESeqDataSetFromMatrix(countData = data,
                                   colData = data.frame(samples = names(data)),
-                                  design = ~ 1))
-# DESeq2 will construct a SummarizedExperiment object and combine this 
-# into a 'DESeqDataSet' object. The 'design' argument usually indicates the 
-# experimental design using the condition(s) names as a 'factor', for now we use just '~ 1'
-
-# Perform normalization
+                                  design = ~ 1)
+# normalization
 rld.dds <- vst(ddsMat)
-# 'Extract' normalized values
+# obtain normalized data
 rld <- assay(rld.dds)
 # transposes and calculate distances
 sampledists <- dist(t(rld))
 ```
 
 
+### 1.3.4 Heatmap
+Using the calculated sample distances a heatmap can be created.
 ```{r}
-# We use the 'pheatmap' library (install with install.packages('pheatmap'))
 library(pheatmap)
 
-# Convert the 'dist' object into a matrix for creating a heatmap
+# Convert the sample distances into a matrix for creating a heatmap
 sampleDistMatrix <- as.matrix(sampledists)
 
-# The annotation is an extra layer that will be plotted above the heatmap columns
-# indicating the cell type
+# create annotation, which represents the design of the data
 annotation <- data.frame(Patient = factor(rep(1:5, times = 3), 
                                           labels = c("m29", "m42", "m43", "s10", "s11")),
                          Condition = factor(rep(c(rep("mild", times = 3),
@@ -117,36 +134,33 @@ annotation <- data.frame(Patient = factor(rep(1:5, times = 3),
                          Repeat = factor(rep(rep(1:3, times = 1), each = 5),
                                          labels = c("R1", "R2", "R3")))
                          
-# Set the rownames of the annotation dataframe to the sample names (required)
+# Set the rownames of the annotation dataframe to the sample names (
 rownames(annotation) <- names(data)
 
+# Create heatmap
 pheatmap(sampleDistMatrix, show_colnames = FALSE,
-         annotation_col = annotation,
+         annotation_col = annotation[,c(1,2)],
          clustering_distance_rows = sampledists,
          clustering_distance_cols = sampledists,
          main = "Euclidean Sample Distances")
-# ~ 0 + Cell
-# contrast
 ```
+In the heatmap a clustering can be seen. The mild and severe patients are divided. The mild patients are orange colored and the severe patients show a dark red color. This color difference, and therefor the overal expression, is not very large. Furthermore, each patient except for m43 can be seen as a cluster, because is shows a light ...
 
-
-
-
-
+### 1.3.5 Multi-dimensional scaling
 
 ```{r}
 library('PoiClaClu')
 library('ggplot2')
 
-# Use the raw (not r-log transformed!) counts
 dds <- assay(ddsMat)
+# Calculate distances using Poisson distancesf
 poisd <- PoissonDistance(t(dds))
 # Extract the matrix with distances
 samplePoisDistMatrix <- as.matrix(poisd$dd)
 # Calculate the MDS and get the X- and Y-coordinates
-mdsPoisData <- data.frame( cmdscale(samplePoisDistMatrix) )
+mdsPoisData <- data.frame(cmdscale(samplePoisDistMatrix))
 
-# And set some better readable names for the columns
+# Rename col names
 names(mdsPoisData) <- c('x_coord', 'y_coord')
 
 # Separate the annotation factor (as the variable name is used as label)
@@ -159,12 +173,14 @@ ggplot(mdsPoisData, aes(x_coord, y_coord, color = groups, label = coldata)) +
   geom_text(size = 4) +
   ggtitle('Multi Dimensional Scaling') +
   labs(x = "Poisson Distance", y = "Poisson Distance") +
+  xlim(-3000, 6500) +
   theme_bw()
 ```
 
-All of the technical repeats from each patient are clustered together. Only s11-TR2 is somewhat seperated from the other repeats of the s11 patient, but this distance is still small.  For these reasons, the data does noet have to be cleaned since there are no clear outliers visible. Furthermore, all of the mild patients are on the left, while the severe patience are a bit shifted to the right (all positive x_coord values)
+All of the technical repeats from each patient are clustered together. Only s11-TR2 is somewhat seperated from the other repeats of the s11 patient, but this distance is still small.  For these reasons, the data does not have to be cleaned since there are no clear outliers visible. Furthermore, all of the mild patients are on the left, while the severe patience are a bit shifted to the right (all positive x-axis values)
 
-## Manual pre-processing
+# 2 Discovering differentialy expressed genes (DEGs)
+## 2.1 Manual pre-processing
 
 Later on we will use libraries in order to normalise the data and calculate the fold-changes of each gene. In order to get some insight into the data, this is done manually. First, the data is normalised to fragments per million mapped fragments 
 
@@ -188,9 +204,7 @@ abline(v=-1, col = 'red', lty=2)
 abline(v=1, col = 'red', lty=2)
 ```
 
-## Discovering Differentialy Expressed Genes
-
-### DESeq2
+## 2.2 DESeq2
 ```{r, message=FALSE}
 ddsMat <- DESeqDataSetFromMatrix(countData = data,
                                   colData = annotation,
@@ -208,20 +222,20 @@ pander(summary(res))
 plotMA(res, ylim = c(-4.5, 4.5))
 ```
 
-### EdgeR
-```{r, message=F}
+## 2.3 EdgeR
+```{r message=FALSE}
 library(edgeR)
 condition <- rep(c(rep(1, times=3), rep(2, times=2)), times = 3)
-dge <- DGEList(counts = data, group = group)
+dge <- DGEList(counts = data, group = condition)
 #dge <- collapseReplicates(dge, groupby = annotation$Patient)
 
-design <- model.matrix(~ annotation$Patient + annotation$Condition)
+design <- model.matrix(~ annotation$Condition)
 keep <- filterByExpr(dge, design)
 dge <- dge[keep, , keep.lib.sizes=FALSE]
 
 dge <- calcNormFactors(dge)
 dge <- estimateDisp(dge, design)
-plotMA(dge)
+# plotMA(dge)
 
 et <- exactTest(dge)
 topTags(et, n = 20)
@@ -230,16 +244,14 @@ deGenes <- decideTestsDGE(et, p=0.05)
 deGenes <- rownames(et)[as.logical(deGenes)]
 plotSmear(et, de.tags=deGenes)
 abline(h=c(-1, 1), col=2)
-
 ```
 
+# 3 Data Analysis and Visualization
 
-# Data Analysis and Visualization
+## 3.1 Volcano plot
 
-## Volcano plot
-
-### DESeq2
-```{r}
+### 3.1.1 DESeq2
+```{r, message=FALSE}
 library(EnhancedVolcano)
 
 ## Simple function for plotting a Volcano plot, returns a ggplot object
@@ -260,30 +272,29 @@ deseq.volcano <- function(res, datasetName) {
 ## Note: input data is the corrected DESeq2 output using the 'lfcShrink' function (see chapter 4)
 deseq.volcano(res = res, datasetName = 'Corona')
 ```
-### EdgeR
+### 3.1.2 EdgeR
 
 ```{r}
-et
-deseq.volcano(res = res, datasetName = 'Corona')
+colnames(et) <- c("log2FoldChange", "logCPM", "padj")
+res
+deseq.volcano(res = et$table, datasetName = 'Corona')
 ```
 
 
-
-## Clustering
-
+## 3.2 Clustering
 
 ```{r}
 res.ordered <- res[order(res$log2FoldChange, decreasing = T),]
 top.degs <- res.ordered[1:20,]
 print(top.degs)
 
-#expr.vals.degs <- subset(data, subset = rownames(data) %in% rownames(top.degs))
-#expr.vals.degs <- log2(expr.vals.degs + 1)
+expr.vals.degs <- subset(data, subset = rownames(data) %in% rownames(top.degs))
+expr.vals.degs <- log2(expr.vals.degs + 1)
 
-#expr.vals.degs.ordered <- expr.vals.degs[
- # match(row.names(top.degs), row.names(expr.vals.degs)),]
+expr.vals.degs.ordered <- expr.vals.degs[
+ match(row.names(top.degs), row.names(expr.vals.degs)),]
 
-#pheatmap(expr.vals.degs.ordered, annotation_col = annotation,
-#         cluster_rows = T, cluster_cols = T)
+pheatmap(expr.vals.degs.ordered, annotation_col = annotation[,1:2],
+        cluster_rows = T, cluster_cols = T)
 ```
 
