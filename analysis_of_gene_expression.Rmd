@@ -1,3 +1,4 @@
+
 ---
 title: "Analysis of gene expression"
 author: "Job Maathuis"
@@ -130,7 +131,7 @@ annotation <- data.frame(Patient = factor(rep(1:5, times = 3),
                                           labels = c("m29", "m42", "m43", "s10", "s11")),
                          Condition = factor(rep(c(rep("mild", times = 3),
                                                 rep("severe", times = 2)), times = 3),
-                                            levels = c('mild', 'severe')),
+                                            levels = c('severe', 'mild')),
                          Repeat = factor(rep(rep(1:3, times = 1), each = 5),
                                          labels = c("R1", "R2", "R3")))
                          
@@ -206,18 +207,18 @@ abline(v=1, col = 'red', lty=2)
 
 ## 2.2 DESeq2
 ```{r, message=FALSE}
-ddsMat <- DESeqDataSetFromMatrix(countData = data,
+dds <- DESeqDataSetFromMatrix(countData = data,
                                   colData = annotation,
                                   design = ~ Condition)
-ddsMat <- DESeq(ddsMat, betaPrior = FALSE)
-ddsMat <- collapseReplicates(ddsMat, groupby = annotation$Patient)
-resultsNames(ddsMat)
+dds <- DESeq(dds, betaPrior = FALSE)
+dds.collapse <- collapseReplicates(dds, groupby = annotation$Patient)
+resultsNames(dds.collapse)
 ```
 
 ```{r, message=FALSE}
-res <- results(ddsMat, alpha = 0.05)
-plotMA(res, ylim = c(-4.5, 4.5))
-res <- lfcShrink(ddsMat, coef="Condition_severe_vs_mild", type="apeglm")
+res <- results(dds.collapse, alpha = 0.05)
+DESeq2::plotMA(res, ylim = c(-4.5, 4.5))
+res <- lfcShrink(dds.collapse, coef="Condition_mild_vs_severe", type="apeglm")
 pander(summary(res))
 plotMA(res, ylim = c(-4.5, 4.5))
 ```
@@ -225,7 +226,7 @@ plotMA(res, ylim = c(-4.5, 4.5))
 ## 2.3 EdgeR
 ```{r message=FALSE}
 library(edgeR)
-condition <- rep(c(rep(1, times=3), rep(2, times=2)), times = 3)
+condition <- rep(c(rep(2, times=3), rep(1, times=2)), times = 3)
 dge <- DGEList(counts = data, group = condition)
 #dge <- collapseReplicates(dge, groupby = annotation$Patient)
 
@@ -258,7 +259,7 @@ library(EnhancedVolcano)
 deseq.volcano <- function(res, datasetName) {
   return(EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
                          lab=rownames(res),
-                         title = paste(datasetName, "Severe vs Mild"),
+                         title = paste(datasetName, "Mild vs Severe"),
                          subtitle = bquote(italic('FDR <= 0.05 and absolute FC >= 2')),
                          # Change text and icon sizes
                          labSize = 3, pointSize = 1.5, axisLabSize=10, titleLabSize=12,
@@ -284,17 +285,14 @@ deseq.volcano(res = et$table, datasetName = 'Corona')
 ## 3.2 Clustering
 
 ```{r}
-res.ordered <- res[order(res$log2FoldChange, decreasing = T),]
-top.degs <- res.ordered[1:20,]
-print(top.degs)
-
-expr.vals.degs <- subset(data, subset = rownames(data) %in% rownames(top.degs))
-expr.vals.degs <- log2(expr.vals.degs + 1)
-
-expr.vals.degs.ordered <- expr.vals.degs[
- match(row.names(top.degs), row.names(expr.vals.degs)),]
-
-pheatmap(expr.vals.degs.ordered, annotation_col = annotation[,1:2],
-        cluster_rows = T, cluster_cols = T)
+res_top <- na.omit(as.data.frame(res))
+res_top <- res_top[res_top$padj < 0.05 & res_top$log2FoldChange < -2 |res_top$log2FoldChange  > 2,]
+distances <- di
+pheatmap(res_top$log2FoldChange)
+```
+## PCA
+```{r}
+rlog_tf <- rlog(dds)
+plotPCA(rlog_tf, intgroup="Condition")
 ```
 
