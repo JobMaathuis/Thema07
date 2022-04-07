@@ -95,13 +95,14 @@ abline(v=-1.5, lwd=1, col='red', lty=2)
 All of the lines follow the same distrubution, where only m29-TR3 is a bit variated from the other data. This variation is not much, so this will probably not cause any big problems. The large peak at the left of the red stippled line is caused by all of the zero's in the dataset. 
 
 ### 1.3.3 Barplot
+The amount of reads, also known as the read depth, can differ widely between all of the measured samples. To get an overview of the differences in read depth a barplot is made.
 ```{r}
 barplot(colSums(data[,c(m29, m42, m43, s10, s11)]) / 1e3, las = 2,
         ylab = 'Sequencing depth (thousands of reads)',
-        main = 'Read counts for GSE181032',
+        main = 'Sequencing depth for GSE181032',
         col=rep(colors, each=3), ylim = c(0, 1000))
 ```
-In the barplot a not much deviation can be seen between samples or within the samples. Only patient s11 has some larger deviation between the minimum and maximum sequencing depth. For this reason the dataset is being normalized. Normalization is achieved by using a variance stabilzing transformation (vst) form the DESeq2 library. When the data is normalzied sample distances can be calculated.
+In the barplot a not much deviation can be seen between samples or within the samples. Only patient s11 has some larger deviation between the minimum and maximum sequencing depth. For this reason the dataset is being normalized. Normalization is achieved by using a variance stabilizing transformation (vst) form the DESeq2 library. When the data is normalized sample distances can be calculated.
 
 ```{r, message=FALSE}
 library("DESeq2")
@@ -119,7 +120,7 @@ sampledists <- dist(t(rld))
 
 
 ### 1.3.4 Heatmap
-Using the calculated sample distances a heatmap can be created.
+Using the calculated sample distances a heatmap can be created. The clustering is based on condition and patient.
 ```{r}
 library(pheatmap)
 
@@ -143,18 +144,21 @@ pheatmap(sampleDistMatrix, show_colnames = FALSE,
          annotation_col = annotation[,c(1,2)],
          clustering_distance_rows = sampledists,
          clustering_distance_cols = sampledists,
-         main = "Euclidean Sample Distances")
+         main = "Euclidean Sample Distances",
+         cutree_cols = 5,
+         cutree_rows = 5)
 ```
 In the heatmap a clustering can be seen. The mild and severe patients are divided. The mild patients are orange colored and the severe patients show a dark red color. This color difference, and therefor the overal expression, is not very large. Furthermore, each patient except for m43 can be seen as a cluster, because is shows a light ...
 
 ### 1.3.5 Multi-dimensional scaling
+With the use of multidimensional scaling a visual representation can be made of the dissimilarities of the samples. These dissimilarities are based upon Poission distances. It is expected that the repeats of each patient are close to each other because they show less dissimilarities when compared to other samples. However, if this is not the case the data may need to be cleaned or outliers needs to be removed. 
 
 ```{r}
 library('PoiClaClu')
 library('ggplot2')
 
 dds <- assay(ddsMat)
-# Calculate distances using Poisson distancesf
+# Calculate distances using Poisson distances
 poisd <- PoissonDistance(t(dds))
 # Extract the matrix with distances
 samplePoisDistMatrix <- as.matrix(poisd$dd)
@@ -180,10 +184,11 @@ ggplot(mdsPoisData, aes(x_coord, y_coord, color = groups, label = coldata)) +
 
 All of the technical repeats from each patient are clustered together. Only s11-TR2 is somewhat seperated from the other repeats of the s11 patient, but this distance is still small.  For these reasons, the data does not have to be cleaned since there are no clear outliers visible. Furthermore, all of the mild patients are on the left, while the severe patience are a bit shifted to the right (all positive x-axis values)
 
-# 2 Discovering differentialy expressed genes (DEGs)
-## 2.1 Manual pre-processing
+# 2 Manual pre-processing
 
-Later on we will use libraries in order to normalise the data and calculate the fold-changes of each gene. In order to get some insight into the data, this is done manually. First, the data is normalised to fragments per million mapped fragments 
+Later on we will use libraries in order to normalize the data and filter out low count genes. This is essential because these low count genes may disturb the statistical test that these libraries apply. However, in this pragraph the normalization and filtering will be done manually in order to get some insight into what is going during these steps. 
+
+First the data is normalized using log2 transformation on the fragments per million mapped fragments (FPM) data. Low count genes are then filtered out based on the criterium that the total FPM of a gene is higher or equal to 3. If this is note the case the whole gene will be left out.
 
 ```{r}
 # Perform a naive FPM4 normalization
@@ -194,41 +199,58 @@ data.fpm <- log2( (data / (colSums(data) / 1e6)) + 1 )
 data.fpm.filtered <- data.fpm[rowSums(data.fpm) >= 3,]
 cat(nrow(data.fpm) - nrow(data.fpm.filtered), "genes have been filtered out")
 ```
+This process results in the filtering out of 3326 genes which is `r 3326/length(rownames(data.fpm)) * 100` % of the total genes
 
+Using these FPM values the log fold changes can be calculated between the mild and severe groups. With the log fold changes a histogram can be made to see the distribution.
 ```{r}
 data.fpm$m.mean <- rowMeans(data.fpm[m.all])
 data.fpm$s.mean <- rowMeans(data.fpm[s.all])
 data.fpm$lfc <- data.fpm$m.mean - data.fpm$s.mean
 
-hist(data.fpm$lfc, breaks=80)
-abline(v=-1, col = 'red', lty=2)
-abline(v=1, col = 'red', lty=2)
+hist(data.fpm$lfc, breaks=80, xlab = "Log2-FC",
+     main = "Log Fold changes of the FPM values",
+     xlim = c(-3, 3))
+abline(v=-2, col = 'red', lty=2)
+abline(v=2, col = 'red', lty=2)
 ```
+As can be seen in the histogram, most of the Log Fold changes are within the -2 and 2 boundaries. These are the boundaries used later on to determine the differential expressed genes (DEG's). So seeing this histogram it is not expected that there are a lot of DEG's when comparing the mild and severe patients.
 
-## 2.2 DESeq2
+# 3 Discovering differentialy expressed genes (DEGs)
+
+## 3.2 DESeq2
+The DESeq2 package can be used for differential analysis of high-dimensional count data.  It will apply a normalization (which was done manually in the previous paragraph) on the data and pefrom a differential expression analysis. The technical repeats are also combined using the collapseReplicates function.
+
 ```{r, message=FALSE}
 dds <- DESeqDataSetFromMatrix(countData = data,
                                   colData = annotation,
                                   design = ~ Condition)
 dds <- DESeq(dds, betaPrior = FALSE)
 dds.collapse <- collapseReplicates(dds, groupby = annotation$Patient)
-resultsNames(dds.collapse)
+res <- results(dds.collapse)
+pander(as.data.frame(head(res)))
 ```
+The results that are obtained from this DESeqDataSet object and plotted in an MA-plot. This plot visualizes the differences between the log transformed data of the mild and severe groups, better known as the log fold change. 
 
 ```{r, message=FALSE}
-res <- results(dds.collapse, alpha = 0.05)
-DESeq2::plotMA(res, ylim = c(-4.5, 4.5))
-res <- lfcShrink(dds.collapse, coef="Condition_mild_vs_severe", type="apeglm")
-pander(summary(res))
-plotMA(res, ylim = c(-4.5, 4.5))
+DESeq2::plotMA(res, ylim = c(-4.5, 4.5),
+       main = "MA-plot of mild vs severe (non-shrunken)", alpha = 0.05, colSig = "red")
 ```
+The red-coloured dots are significant genes (p.value < 0.05) and the grey dots are insignificant genes. On the left side of the MA-plot  a lot of noise can be seen. This is due to the low count genes. In order to remove this noise the log fold changes can be shrunken. This is done by the following code-block.
 
-## 2.3 EdgeR
+```{r}
+res <- lfcShrink(dds.collapse, coef =  "Condition_mild_vs_severe", type = "apeglm")
+DESeq2::plotMA(res,  main = "MA-plot of mild vs severe (shrunken)",
+               ylim = c(-4.5, 4.5), alpha = 0.05, colSig = "red")
+abline(h=c(-2, 2), col=4)
+```
+The noise has now successfully been removed, which results in a cleaner dataset. The structure and the amount of the significant points (red- coloured) is the same, only closer to 0. The amount of significant genes is fairly large, even at low log fold changes. In contrast, there only a few of significant genes having a log fold change above 2 or below -2. The log fold changes will be the biggest discriminating factor in selecting DEG's.
+
+## 3.3 EdgeR
+EdgeR is a similar technique as DESeq2 and will also be used to discover DEG's. The results of each technique will be compared.
 ```{r message=FALSE}
 library(edgeR)
-condition <- rep(c(rep(2, times=3), rep(1, times=2)), times = 3)
-dge <- DGEList(counts = data, group = condition)
-#dge <- collapseReplicates(dge, groupby = annotation$Patient)
+dge <- DGEList(counts = data, group = annotation$Condition)
+
 
 design <- model.matrix(~ annotation$Condition)
 keep <- filterByExpr(dge, design)
@@ -236,63 +258,129 @@ dge <- dge[keep, , keep.lib.sizes=FALSE]
 
 dge <- calcNormFactors(dge)
 dge <- estimateDisp(dge, design)
-# plotMA(dge)
-
 et <- exactTest(dge)
-topTags(et, n = 20)
 
-deGenes <- decideTestsDGE(et, p=0.05)
+# variable which is later used to create the volcano plot
+res.edger <- topTags(et, n = Inf)
+
+deGenes <- decideTestsDGE(et, p=0.05, lfc=2)
 deGenes <- rownames(et)[as.logical(deGenes)]
-plotSmear(et, de.tags=deGenes)
-abline(h=c(-1, 1), col=2)
+plotSmear(et, de.tags=deGenes, ylim = c(-4.5, 4.5), main = "MA-plot of mild vs severe")
+abline(h=c(-2, 2), col=4)
 ```
 
-# 3 Data Analysis and Visualization
+# 4 Data Analysis and Visualization
 
-## 3.1 Volcano plot
+## 4.1 Volcano plot
 
 ### 3.1.1 DESeq2
 ```{r, message=FALSE}
 library(EnhancedVolcano)
 
 ## Simple function for plotting a Volcano plot, returns a ggplot object
-deseq.volcano <- function(res, datasetName) {
-  return(EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
-                         lab=rownames(res),
-                         title = paste(datasetName, "Mild vs Severe"),
-                         subtitle = bquote(italic('FDR <= 0.05 and absolute FC >= 2')),
-                         # Change text and icon sizes
-                         labSize = 3, pointSize = 1.5, axisLabSize=10, titleLabSize=12,
-                         subtitleLabSize=8, captionLabSize=10,
-                         # Disable legend
-                         legendPosition = "none",
-                         # Set cutoffs
-                         pCutoff = 0.05, FCcutoff = 2))
-}
+EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
+                lab=rownames(res),
+                title = paste("Corona", "Mild vs Severe"),
+                subtitle = bquote(italic('FDR <= 0.05 and absolute FC >= 2')),
+                # Change text and icon sizes
+                labSize = 3, pointSize = 3, axisLabSize=10, titleLabSize=12,
+                subtitleLabSize=8, captionLabSize=10, 
+                xlim = c(min(res$log2FoldChange) + 0.5, max(res$log2FoldChange) + 0.5, na.rm = T),
+                # Disable legend
+                legendPosition = "none",
+                # Set cutoffs
+                pCutoff = 0.05, FCcutoff = 2,
+                boxedLabels = T,
+                drawConnectors = T,
+                widthConnectors = 1.0,
+                min.segment.length =  1,
+                col = c("black", "green", "darkorange", "red3"),
+                colAlpha = 2/3)
 
-## Note: input data is the corrected DESeq2 output using the 'lfcShrink' function (see chapter 4)
-deseq.volcano(res = res, datasetName = 'Corona')
 ```
+
 ### 3.1.2 EdgeR
 
-```{r}
-colnames(et) <- c("log2FoldChange", "logCPM", "padj")
-res
-deseq.volcano(res = et$table, datasetName = 'Corona')
+```{r, message=FALSE}
+EnhancedVolcano(res.edger$table, x = 'logFC', y = 'FDR',
+                lab=rownames(res.edger$table),
+                title = paste("Corona", "Mild vs Severe"),
+                subtitle = bquote(italic('FDR <= 0.05 and absolute FC >= 2')),
+                # Change text and icon sizes
+                labSize = 3, pointSize = 3, axisLabSize=10, titleLabSize=12,
+                subtitleLabSize=8, captionLabSize=10, 
+                xlim = c(min(res$log2FoldChange) + 0.5, max(res$log2FoldChange) + 0.5, na.rm = T),
+                # Disable legend
+                legendPosition = "none",
+                # Set cutoffs
+                pCutoff = 0.05, FCcutoff = 2,
+                boxedLabels = T,
+                drawConnectors = T,
+                widthConnectors = 1.0,
+                min.segment.length =  1,
+                col = c("black", "green", "darkorange", "red3"),
+                colAlpha = 2/3)
 ```
 
 
 ## 3.2 Clustering
 
+### 3.2.1 DESeq2
 ```{r}
-res_top <- na.omit(as.data.frame(res))
-res_top <- res_top[res_top$padj < 0.05 & res_top$log2FoldChange < -2 |res_top$log2FoldChange  > 2,]
-distances <- di
-pheatmap(res_top$log2FoldChange)
-```
-## PCA
-```{r}
-rlog_tf <- rlog(dds)
-plotPCA(rlog_tf, intgroup="Condition")
+res.omit <- na.omit(res)
+sig.genes <- res.omit[res.omit$padj <= 0.05 & abs(res.omit$log2FoldChange) > 1.5,]
+
+expr <- data.frame(rowMeans(data.fpm[m29]) - data.fpm$s.mean,
+                rowMeans(data.fpm[m42]) - data.fpm$s.mean,
+                rowMeans(data.fpm[m43]) - data.fpm$s.mean,
+                res$log2FoldChange)
+colnames(expr) <- c("m29", "m42", "m43", "mild vs severe")
+
+pheatmap(expr[rownames(expr) %in% rownames(sig.genes),], 
+         cluster_cols = F,
+         cutree_rows = 3)
 ```
 
+
+### 3.2.2 EdgeR
+```{r}
+sig.genes <- res.edger[res.edger$table$FDR <= 0.05 & abs(res.edger$table$logFC) > 1.5,]
+
+expr <- data.frame(rowMeans(data.fpm[m29]) - data.fpm$s.mean,
+                rowMeans(data.fpm[m42]) - data.fpm$s.mean,
+                rowMeans(data.fpm[m43]) - data.fpm$s.mean,
+                res$log2FoldChange)
+colnames(expr) <- c("m29", "m42", "m43", "mild vs severe")
+
+pheatmap(expr[rownames(expr) %in% rownames(sig.genes),],
+         cluster_cols = F,
+         cutree_rows = 2)
+```
+
+## 3.3 PCA
+
+## 3.3.1 DESeq2
+```{r}
+rlog_deseq <- rlog(dds.collapse)
+plotPCA(rlog_deseq, intgroup="Condition")
+```
+
+## 3.3.1 EdgeR
+```{r}
+edger.dds <- DESeqDataSetFromMatrix(dge$counts, colData = annotation, design = ~ Condition)
+rlog_edger <- rlog(edger.dds)
+plotPCA(rlog_edger, intgroup="Condition")
+```
+
+# 4 Differentialy Expressed Genes
+After comparing the results of DESeq2 and edgeR it was concluded that DESeq2 gave the best results. In this chapter the top DEG's found by DESeq2 are briefly discussed (in order by absolute fold changes)
+
+## 4.1 RGS16
+The RGS16 (Regulator of G protein Signalling 16) gene inhibits signal transduction by increasing the activity of GTPase, which hydrolysis GTP to GDP. RGS16 is significantly down-regulated in mild patients. 
+
+## 4.2 FMN1
+The FMN1 (Formin 1) gene plays a role in the formation of adheren junction and the polymerization of linear actin cables.T
+
+## 4.2 CISH
+
+## 4.4 TK1
