@@ -18,3 +18,5 @@ ggrepel
 EnhancedVolcano
 limma
 edgeR
+futile.logger
+VennDiagram

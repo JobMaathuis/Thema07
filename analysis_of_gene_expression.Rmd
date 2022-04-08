@@ -132,7 +132,7 @@ annotation <- data.frame(Patient = factor(rep(1:5, times = 3),
                                           labels = c("m29", "m42", "m43", "s10", "s11")),
                          Condition = factor(rep(c(rep("mild", times = 3),
                                                 rep("severe", times = 2)), times = 3),
-                                            levels = c('severe', 'mild')),
+                                            levels = c('mild', 'severe')),
                          Repeat = factor(rep(rep(1:3, times = 1), each = 5),
                                          labels = c("R1", "R2", "R3")))
                          
@@ -217,7 +217,7 @@ As can be seen in the histogram, most of the Log Fold changes are within the -2 
 
 # 3 Discovering differentialy expressed genes (DEGs)
 
-## 3.2 DESeq2
+## 3.1 DESeq2
 The DESeq2 package can be used for differential analysis of high-dimensional count data.  It will apply a normalization (which was done manually in the previous paragraph) on the data and pefrom a differential expression analysis. The technical repeats are also combined using the collapseReplicates function.
 
 ```{r, message=FALSE}
@@ -233,19 +233,19 @@ The results that are obtained from this DESeqDataSet object and plotted in an MA
 
 ```{r, message=FALSE}
 DESeq2::plotMA(res, ylim = c(-4.5, 4.5),
-       main = "MA-plot of mild vs severe (non-shrunken)", alpha = 0.05, colSig = "red")
+       main = "MA-plot of severe vs mild (non-shrunken)", alpha = 0.05, colSig = "red")
 ```
 The red-coloured dots are significant genes (p.value < 0.05) and the grey dots are insignificant genes. On the left side of the MA-plot  a lot of noise can be seen. This is due to the low count genes. In order to remove this noise the log fold changes can be shrunken. This is done by the following code-block.
 
-```{r}
-res <- lfcShrink(dds.collapse, coef =  "Condition_mild_vs_severe", type = "apeglm")
-DESeq2::plotMA(res,  main = "MA-plot of mild vs severe (shrunken)",
+```{r, message=F}
+res <- lfcShrink(dds.collapse, coef = 2, type = "apeglm")
+DESeq2::plotMA(res,  main = "MA-plot of severe vs mild (shrunken)",
                ylim = c(-4.5, 4.5), alpha = 0.05, colSig = "red")
 abline(h=c(-2, 2), col=4)
 ```
 The noise has now successfully been removed, which results in a cleaner dataset. The structure and the amount of the significant points (red- coloured) is the same, only closer to 0. The amount of significant genes is fairly large, even at low log fold changes. In contrast, there only a few of significant genes having a log fold change above 2 or below -2. The log fold changes will be the biggest discriminating factor in selecting DEG's.
 
-## 3.3 EdgeR
+## 3.2 EdgeR
 EdgeR is a similar technique as DESeq2 and will also be used to discover DEG's. The results of each technique will be compared.
 ```{r message=FALSE}
 library(edgeR)
@@ -265,13 +265,43 @@ res.edger <- topTags(et, n = Inf)
 
 deGenes <- decideTestsDGE(et, p=0.05, lfc=2)
 deGenes <- rownames(et)[as.logical(deGenes)]
-plotSmear(et, de.tags=deGenes, ylim = c(-4.5, 4.5), main = "MA-plot of mild vs severe")
+plotSmear(et, de.tags=deGenes, ylim = c(-4.5, 4.5), main = "MA-plot of severe vs mild")
 abline(h=c(-2, 2), col=4)
 ```
 
+## 3.3 Comparison 
+When comparing the MA-plot obtained from DESeq2 and edgeR a lot of similarities can be observed. In both plots no downregulated genes (log fold change below -2) can be seen. In addition, in each plot four upregulated genes are observed (log fold change above 2). In the following chapter volcano plots are made and the upregulated genes will be annotated and compared (DESeq2 vs edgeR). 
+
 # 4 Data Analysis and Visualization
 
+In this chapter the data obtained from DESeq2 and edgeR will be analysed and visualised. Data visualisation is achieved by making a venndigram, a volcano plot, a heatmap and a principal components analysis (PCA) plot for each technique (DESeq2 and edgeR). Moreover, the plots from each techniques will be compared.
+
+## 3.1 Venn diagram
+To see the similarities in significant genes a venndiagram will be made. 
+```{r}
+library(VennDiagram)
+# Arguments for a pairwise (two-sets) venn-diagram are sizes for set1, set2 and overlap (intersect)
+# Many more functions are available for triple, quad and quantuple diagrams (starting with 'draw.***')
+deseq.degs <- row.names(res[which(res$padj < 0.05),])
+edger.degs <- row.names(res.edger$table[which(res.edger$table$FDR < 0.05),])
+
+venn.plot <- draw.pairwise.venn(length(deseq.degs),
+                                length(edger.degs),
+                                # Calculate the intersection of the two sets
+                                length(intersect(deseq.degs, edger.degs)),
+                                category = c("DESeq2", "edgeR"), scaled = F,
+                                fill = c("light blue", "pink"), alpha = rep(0.5, 2),
+                                cat.pos = c(0, 0))
+
+# Actually plot the plot
+grid.draw(venn.plot)
+```
+
+According to the venndiagram 287 significant genes are found by both DESeq2 and edgeR. DESeq2 found 55 significant genes that were not found by edgeR and edgeR found 143 significant gens not found by DESeq2. In short, there will probably be some similarities in DEG's when the results of DESeq2 and edgeR are compared.
+
 ## 4.1 Volcano plot
+
+First, the data will be visualised using a volcano plot. A volcano plot is a type of a scatterplot in which the log fold change is plotted against he adjusted p-value. The EnhancedVolcano library is used.
 
 ### 3.1.1 DESeq2
 ```{r, message=FALSE}
@@ -280,7 +310,7 @@ library(EnhancedVolcano)
 ## Simple function for plotting a Volcano plot, returns a ggplot object
 EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
                 lab=rownames(res),
-                title = paste("Corona", "Mild vs Severe"),
+                title = "Corona severe vs mild (DESeq2)",
                 subtitle = bquote(italic('FDR <= 0.05 and absolute FC >= 2')),
                 # Change text and icon sizes
                 labSize = 3, pointSize = 3, axisLabSize=10, titleLabSize=12,
@@ -298,13 +328,14 @@ EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
                 colAlpha = 2/3)
 
 ```
+As can be seen no downregulated genes are observed and only four upregulated genes. RGS16 is the clearly the most significant and upregulated gene when compared to the other DEG's. To see if the same results are obtained by edgeR the same volcano plot is used on the edgeR results.
 
 ### 3.1.2 EdgeR
 
 ```{r, message=FALSE}
 EnhancedVolcano(res.edger$table, x = 'logFC', y = 'FDR',
                 lab=rownames(res.edger$table),
-                title = paste("Corona", "Mild vs Severe"),
+                title = "Corona severe vs mild (edgeR)",
                 subtitle = bquote(italic('FDR <= 0.05 and absolute FC >= 2')),
                 # Change text and icon sizes
                 labSize = 3, pointSize = 3, axisLabSize=10, titleLabSize=12,
@@ -317,51 +348,57 @@ EnhancedVolcano(res.edger$table, x = 'logFC', y = 'FDR',
                 boxedLabels = T,
                 drawConnectors = T,
                 widthConnectors = 1.0,
-                min.segment.length =  1,
+                min.segment.length =  2,
                 col = c("black", "green", "darkorange", "red3"),
                 colAlpha = 2/3)
 ```
+In the volcano plot above, again, no downregulated genes are observed when the severe patients are compared against the severe patients. Furthermore, four upregulated genes can be noticed, where RGS16 is the most significant and upregulated DEG.
 
+### 3.1.3 Comparison
+When comparing the volcano plots of DESeq2 and edgeR a similar structure can be seen. Both plots do not show any downregulated genes. Moreover, the top DEG in both cases is RGS16. Additionally, both methods annotated MKI67 as a DEG. 
+The other two genes of DESeq2 (TK1 and CISH) are not observed by edgeR and the two genes LMNA and FAM43A are not observed by DESeq2. 
 
 ## 3.2 Clustering
+Clustering and a heatmap visualisation will be using the pheatmap library. For better visualisation the log fold change criterium is set to 1.5. This ensures enough genes are shown in the heatmap, instead of the four DEG's found by DESeq2 and edgeR. 
 
 ### 3.2.1 DESeq2
 ```{r}
 res.omit <- na.omit(res)
 sig.genes <- res.omit[res.omit$padj <= 0.05 & abs(res.omit$log2FoldChange) > 1.5,]
 
-expr <- data.frame(rowMeans(data.fpm[m29]) - data.fpm$s.mean,
-                rowMeans(data.fpm[m42]) - data.fpm$s.mean,
-                rowMeans(data.fpm[m43]) - data.fpm$s.mean,
+expr <- data.frame(rowMeans(data.fpm[s10]) - data.fpm$m.mean,
+                rowMeans(data.fpm[s11]) - data.fpm$m.mean,
                 res$log2FoldChange)
-colnames(expr) <- c("m29", "m42", "m43", "mild vs severe")
+colnames(expr) <- c("s10", "s11", "severe vs mild")
 
 pheatmap(expr[rownames(expr) %in% rownames(sig.genes),], 
-         cluster_cols = F,
-         cutree_rows = 3)
+         cluster_cols = F)
 ```
-
+As expected the RGS16 gene stands out because of its high fold change value. Furthermore, CISH and MKI67 are also clearly clustered. The TK1 DEG is less visible by the heatmap and clustering. This is probably due to the lower log fold change and lower significance (higher p-value). This was visualised by the volcano plot in which TK1 was on the edge of the 2 log fold change. When comparing the s11 patient with the s10 patient a lot of dissimilarities can be seen, especially at the lower end of the heatmap. the s11 patient shows a higher log fold change at most of the genes.
 
 ### 3.2.2 EdgeR
 ```{r}
 sig.genes <- res.edger[res.edger$table$FDR <= 0.05 & abs(res.edger$table$logFC) > 1.5,]
 
-expr <- data.frame(rowMeans(data.fpm[m29]) - data.fpm$s.mean,
-                rowMeans(data.fpm[m42]) - data.fpm$s.mean,
-                rowMeans(data.fpm[m43]) - data.fpm$s.mean,
+expr <- data.frame(rowMeans(data.fpm[s10]) - data.fpm$m.mean,
+                rowMeans(data.fpm[s11]) - data.fpm$m.mean,
                 res$log2FoldChange)
-colnames(expr) <- c("m29", "m42", "m43", "mild vs severe")
+colnames(expr) <- c("s10", "s11", "severe vs mild")
 
 pheatmap(expr[rownames(expr) %in% rownames(sig.genes),],
          cluster_cols = F,
          cutree_rows = 2)
 ```
+Again RGS16 can be noticed right away. However, the other DEG's are not as noticable as RGS16. MKI67 shows a light orange color at the s11 patient and a light blue color when severe is compared against mild (higher upregulated than dark blue). More upregulation is observed in the s11 patient when compared to the s10 patient.
+
+### 3.2.3 Comparison
+When comparing the heatmaps of DESeq2 and edgeR only one clear similarity can be seen, which is the strongly upregulated RGS16 gene. The DESeq2 and edgeR technique both show a higher log fold change in most of the genes in s11 when compared to the s10 patient. Furthermore not a lot similarities are seen. EdgeR show a lot less genes compared to DESeq2 (after adjusting the log fold change criterium to 1.5). 
 
 ## 3.3 PCA
 
 ## 3.3.1 DESeq2
 ```{r}
-rlog_deseq <- rlog(dds.collapse)
+rlog_deseq <- rlog(dds)
 plotPCA(rlog_deseq, intgroup="Condition")
 ```
 
@@ -373,14 +410,15 @@ plotPCA(rlog_edger, intgroup="Condition")
 ```
 
 # 4 Differentialy Expressed Genes
-After comparing the results of DESeq2 and edgeR it was concluded that DESeq2 gave the best results. In this chapter the top DEG's found by DESeq2 are briefly discussed (in order by absolute fold changes)
+After comparing the results achieved by DESeq2 and edgeR it is concluded that RGS16 is the most differentially expressed in both cases. Both techniques also annotate the MK167 as a DEG (the second most differentially expressed according to edgeR). For these reasons RGS16 and MK167 are briefly discussed.
 
 ## 4.1 RGS16
-The RGS16 (Regulator of G protein Signalling 16) gene inhibits signal transduction by increasing the activity of GTPase, which hydrolysis GTP to GDP. RGS16 is significantly down-regulated in mild patients. 
+The RGS16 (Regulator of G protein Signalling 16) gene indirectly inhibits signal transduction. The gene product of RGS16 increasing the activity of GTPase, which hydrolysis GTP to GDP. GDP in its turn deactivates G proteins. G proteins transduce information from outside of the cell to the inside of the cell. In our case RGS16 is significantly up-regulated in the severe patients and therefore more inhibition of signal transduction will be observed. This may influence the disease severity, since signal transduction is reduced and this might result in a slower recovery. However, this is only speculation and there is no direct evidence that this results in a higher disease severity.
 
-## 4.2 FMN1
-The FMN1 (Formin 1) gene plays a role in the formation of adheren junction and the polymerization of linear actin cables.T
+## 4.2 MKI67
+The MKI67 (Marker of Proliferation Ki-67) gene plays in important role for cell proliferation. The protein product of MKI67, also known as Ki067 protein, is present during all phases of the cell cycle and is absent in resting cells. In short, when there is cell proliferation MKI67 is active. This is probably due to ongoing recovery of that patient. In other words, this up-regulated gene does probably not cause the disease severity.
 
-## 4.2 CISH
+```{r}
 
-## 4.4 TK1
+```
+
