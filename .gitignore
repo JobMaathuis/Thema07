@@ -1,0 +1,4 @@
+analysis_of_gene_expression_files/*
+analysis_of_gene_expression_cache/*
+.Rdata
+.Rhistory

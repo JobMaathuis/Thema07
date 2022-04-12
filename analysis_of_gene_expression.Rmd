@@ -418,7 +418,4 @@ The RGS16 (Regulator of G protein Signalling 16) gene indirectly inhibits signal
 ## 4.2 MKI67
 The MKI67 (Marker of Proliferation Ki-67) gene plays in important role for cell proliferation. The protein product of MKI67, also known as Ki067 protein, is present during all phases of the cell cycle and is absent in resting cells. In short, when there is cell proliferation MKI67 is active. This is probably due to ongoing recovery of that patient. In other words, this up-regulated gene does probably not cause the disease severity.
 
-```{r}
-
-```
 
