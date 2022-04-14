@@ -31,24 +31,21 @@ colnames(data) <- patient_codes[,2][patient_codes[,1] == colnames(data)]
 
 ## 1.2 Data structure
 
-The dataset has the following structure
+To get an overview of the structure of the  dataset the following code is used
 ```{r}
 library(pander)
-pander(head(data, 5))
-print(dim(data))
+pander(head(data, 5), caption = "Raw count data of GSE181032")
+pander(dim(data))
 print(str(data))
 ```
-As can be seen above, the data consists out of 16,282 rows, corresponding to the genes, and 15 columns, which are the different samples. The structure of the samples is as follows:
+As can be seen above, the data consists out of 16.282 rows, corresponding to the genes, and 15 columns, which are the different samples. The structure of the samples is as follows:
 
 *  3 patients with a mild disease severity (m29, m42, m43), each having 3 technical repeats
 *  2 patients with a severe disease severity (s10, s11), each having 3 technical repeats
 
-To distinguish between these groups, some variables are made.
+To distinguish between these groups, some variables are made below
 
 ```{r}
-# variable for dataset name, which can be used later
-name_dataset <- 'GSE181032'
-
 # mild patients
 m29 <- c(1, 6, 11)
 m42 <- c(2, 7, 12)
@@ -61,7 +58,7 @@ s11 <- c(5, 10, 15)
 s.all <- c(s10, s11)
 ```
 
-To get a quick look at the data the summary() function is used. With this function the minimum, first quartile, median, mean, third quartile and the maximum value of each column are obtained. 
+To get a quick look at the data the summary() function is used. With this function the minimum, first quartile, median, mean, third quartile and the maximum value of each column are obtained, respectively. 
 
 ```{r}
 summary(data)
@@ -80,7 +77,7 @@ boxplot((data[,c(m29, m42, m43, s10, s11)] + 1),
         ylab = 'Log2(counts)', outline = F, las = 2, 
         col=rep(colors, each=3))
 ```
-For every patient the repeats shows the same distrubution. This is also the case if the patients are compared. A somewhat larger deviation can be seen in s11-TR2 data. The large differences between the maximum values and the other values reflect the summary data in the previous chapter. 
+For every repeat of each patient the same same distrubution can be observed. This is also the case if the patients are compared. A somewhat larger deviation can be seen in the s11-TR2 data. The large differences between the maximum values and the other values reflect the summary data in the previous chapter. 
 
 ### 1.3.2 Density plot
 The distrubtion of the count data can also be visualised using a density plot.
@@ -102,7 +99,7 @@ barplot(colSums(data[,c(m29, m42, m43, s10, s11)]) / 1e3, las = 2,
         main = 'Sequencing depth for GSE181032',
         col=rep(colors, each=3), ylim = c(0, 1000))
 ```
-In the barplot a not much deviation can be seen between samples or within the samples. Only patient s11 has some larger deviation between the minimum and maximum sequencing depth. For this reason the dataset is being normalized. Normalization is achieved by using a variance stabilizing transformation (vst) form the DESeq2 library. When the data is normalized sample distances can be calculated.
+In the barplot not much deviation can be seen between samples or within the samples. Only patient s11 has some larger deviation between the minimum and maximum sequencing depth, which may cause some minor problems. For this reason the dataset is being normalized. Normalization is achieved by using a variance stabilizing transformation (vst) form the DESeq2 library. When the data is normalized sample distances can be calculated.
 
 ```{r, message=FALSE}
 library("DESeq2")
@@ -120,7 +117,7 @@ sampledists <- dist(t(rld))
 
 
 ### 1.3.4 Heatmap
-Using the calculated sample distances a heatmap can be created. The clustering is based on condition and patient.
+Using the calculated euclidean sample distances a heatmap can be created. The clustering is based on condition and patient.
 ```{r}
 library(pheatmap)
 
@@ -144,11 +141,9 @@ pheatmap(sampleDistMatrix, show_colnames = FALSE,
          annotation_col = annotation[,c(1,2)],
          clustering_distance_rows = sampledists,
          clustering_distance_cols = sampledists,
-         main = "Euclidean Sample Distances",
-         cutree_cols = 5,
-         cutree_rows = 5)
+         main = "Heatmap using euclidean sample distances")
 ```
-In the heatmap a clustering can be seen. The mild and severe patients are divided. The mild patients are orange colored and the severe patients show a dark red color. This color difference, and therefor the overal expression, is not very large. Furthermore, each patient except for m43 can be seen as a cluster, because is shows a light ...
+In the heatmap a clustering can be seen. The mild and severe patients are divided. The mild patients are orange colored and the severe patients show a dark red color. This color difference, and therefore the overal euclidean distance, is not very large. Furthermore, each patient except for m43 can be distinguished by a light shaded box clustering all of the repeats together. 
 
 ### 1.3.5 Multi-dimensional scaling
 With the use of multidimensional scaling a visual representation can be made of the dissimilarities of the samples. These dissimilarities are based upon Poission distances. It is expected that the repeats of each patient are close to each other because they show less dissimilarities when compared to other samples. However, if this is not the case the data may need to be cleaned or outliers needs to be removed. 
@@ -176,7 +171,7 @@ coldata <- names(data)
 # Create the plot using ggplot
 ggplot(mdsPoisData, aes(x_coord, y_coord, color = groups, label = coldata)) + 
   geom_text(size = 4) +
-  ggtitle('Multi Dimensional Scaling') +
+  ggtitle('Multi Dimensional Scaling of GSE181032') +
   labs(x = "Poisson Distance", y = "Poisson Distance") +
   xlim(-3000, 6500) +
   theme_bw()
@@ -184,28 +179,27 @@ ggplot(mdsPoisData, aes(x_coord, y_coord, color = groups, label = coldata)) +
 
 All of the technical repeats from each patient are clustered together. Only s11-TR2 is somewhat seperated from the other repeats of the s11 patient, but this distance is still small.  For these reasons, the data does not have to be cleaned since there are no clear outliers visible. Furthermore, all of the mild patients are on the left, while the severe patience are a bit shifted to the right (all positive x-axis values)
 
-# 2 Manual pre-processing
+# 2. Manual pre-processing
 
-Later on we will use libraries in order to normalize the data and filter out low count genes. This is essential because these low count genes may disturb the statistical test that these libraries apply. However, in this pragraph the normalization and filtering will be done manually in order to get some insight into what is going during these steps. 
+Later on we libraries are used in order to normalize the data and filter out low count genes. This is essential because these low count genes may disturb the statistical test that these libraries apply. However, in this chapter the normalization and filtering will be done manually in order to get some insight into what is going during these steps. 
 
-First the data is normalized using log2 transformation on the fragments per million mapped fragments (FPM) data. Low count genes are then filtered out based on the criterium that the total FPM of a gene is higher or equal to 3. If this is note the case the whole gene will be left out.
+First, the data is normalized using log2 transformation on the fragments per million mapped fragments (FPM) data. Low count genes are then filtered out based on the criterium that the total FPM of a gene is higher or equal to 3. If this is not the case, the whole gene will be removed from the dataset.
 
 ```{r}
 # Perform a naive FPM4 normalization
-# Note: log transformation includes a pseudocount of 11
 data.fpm <- log2( (data / (colSums(data) / 1e6)) + 1 )
 
 
 data.fpm.filtered <- data.fpm[rowSums(data.fpm) >= 3,]
 cat(nrow(data.fpm) - nrow(data.fpm.filtered), "genes have been filtered out")
 ```
-This process results in the filtering out of 3326 genes which is `r 3326/length(rownames(data.fpm)) * 100` % of the total genes
+This process results in the filtering out of 3326 genes which is `r round(3326/length(rownames(data.fpm)) * 100, 2)` % of the total genes
 
-Using these FPM values the log fold changes can be calculated between the mild and severe groups. With the log fold changes a histogram can be made to see the distribution.
+Using these FPM values the log fold changes can be calculated between the mild and severe groups. Since log values are used the fod change can be obtained by by subtracting the mean of each group for each gene. With the log fold changes a histogram can be made to see the distribution.
 ```{r}
 data.fpm$m.mean <- rowMeans(data.fpm[m.all])
 data.fpm$s.mean <- rowMeans(data.fpm[s.all])
-data.fpm$lfc <- data.fpm$m.mean - data.fpm$s.mean
+data.fpm$lfc <- data.fpm$s.mean - data.fpm$m.mean
 
 hist(data.fpm$lfc, breaks=80, xlab = "Log2-FC",
      main = "Log Fold changes of the FPM values",
@@ -218,7 +212,7 @@ As can be seen in the histogram, most of the Log Fold changes are within the -2 
 # 3 Discovering differentialy expressed genes (DEGs)
 
 ## 3.1 DESeq2
-The DESeq2 package can be used for differential analysis of high-dimensional count data.  It will apply a normalization (which was done manually in the previous paragraph) on the data and pefrom a differential expression analysis. The technical repeats are also combined using the collapseReplicates function.
+The DESeq2 package can be used for differential analysis of high-dimensional count data.  It will apply a normalization (which was done manually in the previous chapter) on the data and pefrom a differential expression analysis. The technical repeats are also combined using the collapseReplicates function.
 
 ```{r, message=FALSE}
 dds <- DESeqDataSetFromMatrix(countData = data,
@@ -227,9 +221,11 @@ dds <- DESeqDataSetFromMatrix(countData = data,
 dds <- DESeq(dds, betaPrior = FALSE)
 dds.collapse <- collapseReplicates(dds, groupby = annotation$Patient)
 res <- results(dds.collapse)
-pander(as.data.frame(head(res)))
+pander(as.data.frame(head(res)), caption = "DESeq2 results")
 ```
-The results that are obtained from this DESeqDataSet object and plotted in an MA-plot. This plot visualizes the differences between the log transformed data of the mild and severe groups, better known as the log fold change. 
+
+
+The results that are obtained from this DESeqDataSet object (see table above) are plotted in an MA-plot. This plot visualizes the differences between the log transformed data of the mild and severe groups, better known as the log fold change. 
 
 ```{r, message=FALSE}
 DESeq2::plotMA(res, ylim = c(-4.5, 4.5),
@@ -263,25 +259,24 @@ et <- exactTest(dge)
 # variable which is later used to create the volcano plot
 res.edger <- topTags(et, n = Inf)
 
-deGenes <- decideTestsDGE(et, p=0.05, lfc=2)
+deGenes <- decideTestsDGE(et, p=0.05, lfc=0)
 deGenes <- rownames(et)[as.logical(deGenes)]
 plotSmear(et, de.tags=deGenes, ylim = c(-4.5, 4.5), main = "MA-plot of severe vs mild")
 abline(h=c(-2, 2), col=4)
 ```
+In het MA-plot obtained by edgeR the significant genes are coloured red. A lot of genes are significant, even with low log fold changes. However, only a few are above the log fold change of 2.
 
 ## 3.3 Comparison 
-When comparing the MA-plot obtained from DESeq2 and edgeR a lot of similarities can be observed. In both plots no downregulated genes (log fold change below -2) can be seen. In addition, in each plot four upregulated genes are observed (log fold change above 2). In the following chapter volcano plots are made and the upregulated genes will be annotated and compared (DESeq2 vs edgeR). 
+When comparing the MA-plot obtained from DESeq2 and edgeR a lot of similarities can be observed. In both plots no downregulated genes (log fold change below -2) can be seen. In addition, in each plot four upregulated genes are observed (log fold change above 2). With both methods there are also a lot significant genes which are below the log fold change tershold. In the following chapter volcano plots are made and the upregulated genes will be annotated and compared (DESeq2 vs edgeR). 
 
 # 4 Data Analysis and Visualization
 
 In this chapter the data obtained from DESeq2 and edgeR will be analysed and visualised. Data visualisation is achieved by making a venndigram, a volcano plot, a heatmap and a principal components analysis (PCA) plot for each technique (DESeq2 and edgeR). Moreover, the plots from each techniques will be compared.
 
-## 3.1 Venn diagram
-To see the similarities in significant genes a venndiagram will be made. 
+## 3.1 Venndiagram
+To see the similarities in significant genes a venndiagram will be made. THis illustrates the amount of genes that are found to be significint in both techniques and the amount of genes that are only significint in one of the two techniques. 
 ```{r}
 library(VennDiagram)
-# Arguments for a pairwise (two-sets) venn-diagram are sizes for set1, set2 and overlap (intersect)
-# Many more functions are available for triple, quad and quantuple diagrams (starting with 'draw.***')
 deseq.degs <- row.names(res[which(res$padj < 0.05),])
 edger.degs <- row.names(res.edger$table[which(res.edger$table$FDR < 0.05),])
 
@@ -297,17 +292,17 @@ venn.plot <- draw.pairwise.venn(length(deseq.degs),
 grid.draw(venn.plot)
 ```
 
-According to the venndiagram 287 significant genes are found by both DESeq2 and edgeR. DESeq2 found 55 significant genes that were not found by edgeR and edgeR found 143 significant gens not found by DESeq2. In short, there will probably be some similarities in DEG's when the results of DESeq2 and edgeR are compared.
+According to the venndiagram 287 significant genes are found by both DESeq2 and edgeR, which is a relatively large amount. DESeq2 found 55 significant genes that were not found by edgeR and edgeR found 143 significant gens not found by DESeq2. In short, there will probably be some similarities in DEG's when the results of DESeq2 and edgeR are compared.
 
 ## 4.1 Volcano plot
 
-First, the data will be visualised using a volcano plot. A volcano plot is a type of a scatterplot in which the log fold change is plotted against he adjusted p-value. The EnhancedVolcano library is used.
+First, the data will be visualised using a volcano plot. A volcano plot is a type of a scatterplot in which the log fold change is plotted against he adjusted p-value. The EnhancedVolcano library is used for this.
 
 ### 3.1.1 DESeq2
 ```{r, message=FALSE}
 library(EnhancedVolcano)
 
-## Simple function for plotting a Volcano plot, returns a ggplot object
+# vulcano plot
 EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
                 lab=rownames(res),
                 title = "Corona severe vs mild (DESeq2)",
@@ -320,6 +315,7 @@ EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
                 legendPosition = "none",
                 # Set cutoffs
                 pCutoff = 0.05, FCcutoff = 2,
+                # make fancy boxes and better colours
                 boxedLabels = T,
                 drawConnectors = T,
                 widthConnectors = 1.0,
@@ -328,7 +324,14 @@ EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
                 colAlpha = 2/3)
 
 ```
-As can be seen no downregulated genes are observed and only four upregulated genes. RGS16 is the clearly the most significant and upregulated gene when compared to the other DEG's. To see if the same results are obtained by edgeR the same volcano plot is used on the edgeR results.
+As expected no downregulated genes are observed and only four upregulated genes. The DEG's that are oberved are:
+
+* TK1
+* MKI67
+* CISH
+* RGS16
+
+RGS16 is the clearly the most significant and upregulated gene when compared to the other DEG's. To see if the same results are obtained by edgeR the same volcano plot is used on the edgeR results.
 
 ### 3.1.2 EdgeR
 
@@ -345,6 +348,7 @@ EnhancedVolcano(res.edger$table, x = 'logFC', y = 'FDR',
                 legendPosition = "none",
                 # Set cutoffs
                 pCutoff = 0.05, FCcutoff = 2,
+                # make fancy boxes and better colours
                 boxedLabels = T,
                 drawConnectors = T,
                 widthConnectors = 1.0,
@@ -352,14 +356,21 @@ EnhancedVolcano(res.edger$table, x = 'logFC', y = 'FDR',
                 col = c("black", "green", "darkorange", "red3"),
                 colAlpha = 2/3)
 ```
-In the volcano plot above, again, no downregulated genes are observed when the severe patients are compared against the severe patients. Furthermore, four upregulated genes can be noticed, where RGS16 is the most significant and upregulated DEG.
+In the volcano plot above, again, no downregulated genes are observed when the severe patients are compared against the severe patients. Furthermore, four upregulated genes can be noticed:
+
+* LMNA
+* FAM43A
+* MKI67
+* RGS16
+
+RGS16 is the most significant and upregulated DEG.
 
 ### 3.1.3 Comparison
 When comparing the volcano plots of DESeq2 and edgeR a similar structure can be seen. Both plots do not show any downregulated genes. Moreover, the top DEG in both cases is RGS16. Additionally, both methods annotated MKI67 as a DEG. 
 The other two genes of DESeq2 (TK1 and CISH) are not observed by edgeR and the two genes LMNA and FAM43A are not observed by DESeq2. 
 
 ## 3.2 Clustering
-Clustering and a heatmap visualisation will be using the pheatmap library. For better visualisation the log fold change criterium is set to 1.5. This ensures enough genes are shown in the heatmap, instead of the four DEG's found by DESeq2 and edgeR. 
+Clustering and a heatmap visualisation will be obtained using the `pheatmap` library. For better visualisation the log fold change criterium is set to 1.5. This ensures enough genes are shown in the heatmap, instead of the four DEG's found by DESeq2 and edgeR. 
 
 ### 3.2.1 DESeq2
 ```{r}
@@ -372,7 +383,8 @@ expr <- data.frame(rowMeans(data.fpm[s10]) - data.fpm$m.mean,
 colnames(expr) <- c("s10", "s11", "severe vs mild")
 
 pheatmap(expr[rownames(expr) %in% rownames(sig.genes),], 
-         cluster_cols = F)
+         cluster_cols = F,
+         main = "Heatmap of severe vs mild (DESeq2")
 ```
 As expected the RGS16 gene stands out because of its high fold change value. Furthermore, CISH and MKI67 are also clearly clustered. The TK1 DEG is less visible by the heatmap and clustering. This is probably due to the lower log fold change and lower significance (higher p-value). This was visualised by the volcano plot in which TK1 was on the edge of the 2 log fold change. When comparing the s11 patient with the s10 patient a lot of dissimilarities can be seen, especially at the lower end of the heatmap. the s11 patient shows a higher log fold change at most of the genes.
 
@@ -387,7 +399,7 @@ colnames(expr) <- c("s10", "s11", "severe vs mild")
 
 pheatmap(expr[rownames(expr) %in% rownames(sig.genes),],
          cluster_cols = F,
-         cutree_rows = 2)
+         main = "Heatmap of severe vs mild (edgeR")
 ```
 Again RGS16 can be noticed right away. However, the other DEG's are not as noticable as RGS16. MKI67 shows a light orange color at the s11 patient and a light blue color when severe is compared against mild (higher upregulated than dark blue). More upregulation is observed in the s11 patient when compared to the s10 patient.
 
@@ -395,27 +407,21 @@ Again RGS16 can be noticed right away. However, the other DEG's are not as notic
 When comparing the heatmaps of DESeq2 and edgeR only one clear similarity can be seen, which is the strongly upregulated RGS16 gene. The DESeq2 and edgeR technique both show a higher log fold change in most of the genes in s11 when compared to the s10 patient. Furthermore not a lot similarities are seen. EdgeR show a lot less genes compared to DESeq2 (after adjusting the log fold change criterium to 1.5). 
 
 ## 3.3 PCA
-
-## 3.3.1 DESeq2
+PCA reduces the amount of variables by transforming it into less variables, this is also called dimension reduction. It does this by keeping as much information of the data as possible in the so called principle components. This causes the data to be more simple, which may visualise the data better.
 ```{r}
-rlog_deseq <- rlog(dds)
-plotPCA(rlog_deseq, intgroup="Condition")
+pca_data <- rlog(dds)
+plotPCA(pca_data, intgroup="Condition")
 ```
+As can be seen in the PCA plot the first principal component explains 35% of the variance and is able to differentiate between the conditions. The second principal component explains 12% of the variance. 
 
-## 3.3.1 EdgeR
-```{r}
-edger.dds <- DESeqDataSetFromMatrix(dge$counts, colData = annotation, design = ~ Condition)
-rlog_edger <- rlog(edger.dds)
-plotPCA(rlog_edger, intgroup="Condition")
-```
 
 # 4 Differentialy Expressed Genes
 After comparing the results achieved by DESeq2 and edgeR it is concluded that RGS16 is the most differentially expressed in both cases. Both techniques also annotate the MK167 as a DEG (the second most differentially expressed according to edgeR). For these reasons RGS16 and MK167 are briefly discussed.
 
 ## 4.1 RGS16
-The RGS16 (Regulator of G protein Signalling 16) gene indirectly inhibits signal transduction. The gene product of RGS16 increasing the activity of GTPase, which hydrolysis GTP to GDP. GDP in its turn deactivates G proteins. G proteins transduce information from outside of the cell to the inside of the cell. In our case RGS16 is significantly up-regulated in the severe patients and therefore more inhibition of signal transduction will be observed. This may influence the disease severity, since signal transduction is reduced and this might result in a slower recovery. However, this is only speculation and there is no direct evidence that this results in a higher disease severity.
+The RGS16 (Regulator of G protein Signalling 16) gene indirectly inhibits signal transduction. The gene product of RGS16 increasing the activity of GTPase, which hydrolysis GTP to GDP. GDP in its turn deactivates G proteins. G proteins transduce information from outside of the cell to the inside of the cell. In our case RGS16 is significantly up-regulated in the severe patients and therefore more inhibition of signal transduction will be observed in the memory T-cells. This may influence the disease severity, since signal transduction is reduced and this might result in a slower recovery. However, this is only speculation and there is no direct evidence that this results in a higher disease severity.
 
 ## 4.2 MKI67
-The MKI67 (Marker of Proliferation Ki-67) gene plays in important role for cell proliferation. The protein product of MKI67, also known as Ki067 protein, is present during all phases of the cell cycle and is absent in resting cells. In short, when there is cell proliferation MKI67 is active. This is probably due to ongoing recovery of that patient. In other words, this up-regulated gene does probably not cause the disease severity.
+The MKI67 (Marker of Proliferation Ki-67) gene plays in important role for cell proliferation. The protein product of MKI67, also known as Ki067 protein, is present during all phases of the cell cycle and is absent in resting cells. In short, when there is cell proliferation MKI67 is active. This is probably due to ongoing recovery of that patient. In other words, this up-regulated gene in the memory T-cell is due to the ongoing recovery of the patient and probably does not affect the severity of the disease.
 
 
